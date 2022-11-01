@@ -10,10 +10,14 @@ export async function updateModuleJson(modulePath: string, srcModuleId: string, 
 
     moduleJson.id = targetModuleName;
     moduleJson.title = `${moduleJson.title} (${targetModuleConfig.id})`
-    moduleJson.relationships.systems = moduleJson.relationships.systems.map((system: any) => {
-        if (system.id === srcModuleId) return targetModuleConfig;
-        return system;
-    });
+    
+    if (moduleJson.relationships?.systems) {
+        moduleJson.relationships.systems = moduleJson.relationships.systems.map((system: any) => {
+            if (system.id === srcModuleId) return targetModuleConfig;
+            return system;
+        });
+    }
+    
     moduleJson.packs = moduleJson.packs.map((pack: any) => ({
         ...pack,
         label: `${pack.label} (${targetModuleConfig.id})`,

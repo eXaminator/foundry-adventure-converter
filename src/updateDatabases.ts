@@ -1,6 +1,7 @@
 import Datastore from '@seald-io/nedb';
-import { join } from 'path';
+import { existsSync, readFileSync } from 'fs-extra';
 import { readFile } from 'fs/promises';
+import { join } from 'path';
 import { generateId } from './generateId';
 
 const ITEM_TYPE: Record<string, string> = {
@@ -68,6 +69,10 @@ interface Texture {
     src: string | null,
 }
 
+interface Effect {
+    disabled: boolean,
+}
+
 interface Item {
     _id: string,
     name: string,
@@ -75,6 +80,7 @@ interface Item {
     type: string,
     system: any,
     flags?: Record<string, unknown>,
+    effects: Effect[],
 }
 
 interface Token {
@@ -86,6 +92,14 @@ interface Token {
     },
     texture: Texture,
     flags?: Record<string, unknown>,
+    sight: {
+        range: number,
+    },
+    light: {
+        bright: number,
+        dim: number;
+    },
+    actorData: any;
 }
 
 interface Actor {
@@ -97,6 +111,7 @@ interface Actor {
     prototypeToken: Token,
     items: Item[],
     flags?: Record<string, unknown>,
+    effects: Effect[],
 }
 
 interface Journal {
@@ -199,11 +214,11 @@ interface Die {
 }
 
 function dcToModifier(dc: number) {
-    if (dc <= 7) return `<span title="DC ${dc}">+4</span>`;
-    if (dc <= 12) return `<span title="DC ${dc}">+2</span>`;
-    if (dc <= 17) return `<span title="DC ${dc}">💭</span>`;
-    if (dc <= 22) return `<span title="DC ${dc}">-2</span>`;
-    if (dc <= 27) return `<span title="DC ${dc}">-4</span>`;
+    if (dc <= 7) return `<span title="DC ${dc}">+4 🎲</span>`;
+    if (dc <= 12) return `<span title="DC ${dc}">+2 🎲</span>`;
+    if (dc <= 17) return `<span title="DC ${dc}">🎲</span>`;
+    if (dc <= 22) return `<span title="DC ${dc}">-2 🎲</span>`;
+    if (dc <= 27) return `<span title="DC ${dc}">-4 🎲</span>`;
 
     return `<span title="DC ${dc}">-8</span>`;
 }
@@ -258,44 +273,145 @@ function fixFlags(flags: Record<string, any> | undefined, srcName: string, targe
     return flags;
 }
 
+function secret(text: string | null): string | null {
+    if (!text) return text;
+
+    return `<section class="secret">${fixupDcs(text)}</section>`;
+}
+
+function createNotes(data: any): string {
+    const notes: string[] = [];
+
+    if (data.properties.mgc) notes.push('magic');
+    if (data.properties.ada) notes.push('adamantine');
+    if (data.properties.sil) notes.push('alchemical silver');
+    if (data.properties.rch) notes.push('reach');
+    if (data.properties.two) notes.push('two hands');
+
+    return notes.join(', ');
+}
+
+function getRange(rangeInFt: number): string {
+    const base = Math.floor(rangeInFt / 5);
+
+    return `${base}/${base * 2}/${base * 4}`;
+}
+
+function getItemType(item: any): string {
+    if (item.type === 'equipment' && item.system.armor?.type === 'trinket') return 'gear';
+
+    return ITEM_TYPE[item.type];
+}
+
+function convertEffect(effect: Effect): Effect {
+    return {
+        ...effect,
+        disabled: true,
+    };
+}
+
 function convertItem(item: Item, srcName: string, targetName: string): Item {
     item.img = replacePaths(item.img, srcName, targetName);
 
-    item.type = ITEM_TYPE[item.type];
+    item.type = getItemType(item);
     item.flags = fixFlags(item.flags, srcName, targetName);
+    item.effects = item.effects.map(effect => convertEffect(effect));
 
-    // TODO: do intelligent stuff
+    let weaponStats = {};
+    if (item.type === 'weapon') {
+        let actions: Record<string, any> = {};
+        if (item.system.actionType === 'mwak' && item.system.properties.thr) {
+            actions[generateId()] = {
+                name: 'Throw',
+                rof: null,
+                shotsUsed: null,
+                skillMod: '',
+                skillOverride: 'Athletics',
+                type: 'skill',
+            };
+        }
+
+        weaponStats = {
+            actions: {
+                skill: 
+                    item.system.actionType === 'mwak' ? 'Fighting' :
+                    item.system.actionType === 'rwak' ? 'Shooting' :
+                    'Athletics',
+                additional: actions
+            },
+            ap: item.system.properties?.mgc ? '1' : '0',
+            currentShots: '0',
+            shots: '0',
+            damage: item.system.damage?.parts?.[0]?.[0]?.replace('@mod', '@str') ?? '',
+            equipStatus: 4,
+            minStr: item.system.damage?.parts?.[0]?.[0]?.match(/^d[0-9]+/)?.[0] ?? 'd4',
+            notes: createNotes(item.system),
+            parry: 0,
+            range: item.system.range?.value ? getRange(item.system.range.value) : '',
+            rof: '0',
+            isHeavyWeapon: item.system.properties?.hvy ?? false,
+            autoReload: (!item.system.properties?.lod && !item.system.properties?.rel) ?? false,
+        };
+    }
+
+    let armorStats = {};
+    if (item.type === 'armor') {
+        armorStats = {
+            armor: 
+                item.system.armor.type === 'light' ? 2 :
+                item.system.armor.type === 'medium' ? 3 :
+                item.system.armor.type === 'heavy' ? 4 :
+                0,
+            isHeavyArmor: false,
+            isNaturalArmor: false,
+            locations: {
+                head: false,
+                torso: true,
+                arms: true,
+                legs: false,
+            },
+            minStr:
+                item.system.armor.type === 'light' ? 'd6' :
+                item.system.armor.type === 'medium' ? 'd8' :
+                item.system.armor.type === 'heavy' ? 'd10' :
+                'd4',
+            notes: '',
+            toughness: '',
+            equipStatus: 3,
+        };
+    }
+
     item.system = {
-        description: fixupDcs(item.system.description?.value ?? ''),
+        description: secret(item.system.description?.unidentified)! + fixupDcs(item.system.description?.value ?? '')!,
         isArcaneBackground: item.type === 'edge' && item.name.toLowerCase() === 'spellcasting',
+        weight: item.system.weight,
+        price: item.system.price,
+        quantity: item.system.quantity,
+        source: item.system.source,
+        category: `${item.system.rarity} ${item.system.baseItem ?? ''}`,
+        isAmmo: item.system.properties?.amm ?? false,
+        equippable: item.system.armor?.type ? true : false,
+
+        ...weaponStats,
+        ...armorStats,
     };
 
     return item;
 }
 
 function convertToken(token: Token, srcName: string, targetName: string): Token {
+    token.actorData = {};
     token.texture.src = replacePaths(token.texture.src, srcName, targetName);
     token.bar1.attribute = null;
     token.bar2.attribute = null;
     token.flags = fixFlags(token.flags, srcName, targetName);
+    
+    token.light.bright /= 5;
+    token.light.dim /= 5;
+    token.sight.range /= 5;
 
     return token;
 }
-
-/*
-0 Untrained (d4)
-1 d4
-2 d4
-3 d6
-4 d6
-5 d8
-6 d8
-7 d10
-8 d10
-9 d12
-10 d12
-11 d12+1
-*/
 
 function convertValue(value: number, modifier = 0): Die {
     if (value <= 2) return { sides: 4, modifier };
@@ -303,10 +419,10 @@ function convertValue(value: number, modifier = 0): Die {
     if (value <= 6) return { sides: 8, modifier };
     if (value <= 8) return { sides: 10, modifier };
     
-    return { sides: 12, modifier: Math.ceil((value - 10) / 2) + modifier };
+    return { sides: 12, modifier: Math.ceil((value - 11) / 3) + modifier };
 }
 
-function createSkill(name: string, value: number, modifier = 0) {
+function createSkill(name: string, value: number, modifier = 0): Item {
     return {
         _id: generateId(),
         name,
@@ -317,66 +433,102 @@ function createSkill(name: string, value: number, modifier = 0) {
             die: convertValue(value, modifier),
             isCoreSkill: ['Athletics', 'Notice', 'Persuasion', 'Stealth', 'Common Knowledge'].includes(name),
         },
+        effects: [],
     };
 }
 
 function getAbilityValue(ability: { value: number }) {
-    return ability.value - 10;
+    return (ability.value ?? 10) - 9;
+}
+
+function getAbilityModifier(actor: Actor, abilityName: string): number {
+    const ability = actor.system.abilities?.[abilityName];
+
+    if (!ability) return 0;
+
+    return Math.floor((ability.value - 10) / 2);
+}
+
+function getProfBonus(actor: Actor, skillName: string): number {
+    const skill = actor.system.skills[skillName];
+    if (skill?.prof) return skill?.prof;
+    
+    const multiplier = skill.value ?? 0;
+
+    if (actor.system.attributes?.prof) return actor.system.attributes?.prof * multiplier;
+    if (actor.system.details?.cr) return (Math.ceil(Math.max(actor.system.details.cr, 1) / 4) + 1) * multiplier;
+
+    return 0;
+}
+
+function getSkillValue(actor: Actor, skillName: string) {
+    const skill = actor.system.skills[skillName];
+    if (!skill) return 0;
+
+    return getAbilityModifier(actor, skill.ability) + getProfBonus(actor, skillName);
+}
+
+function createAdditionalStatWithKey(key: string, label: string, value: any): Record<string, { dtype: string, hasMaxValue: boolean, isCheckbox: boolean, label: string, value: any }> {
+    return {
+        [key]: {
+            label,
+            value,
+            dtype: 'String',
+            hasMaxValue: false,
+            isCheckbox: false,
+        },
+    };
 }
 
 function convertActor(actor: Actor, srcName: string, targetName: string): Actor {
-    actor.img = replacePaths(actor.img, srcName, targetName);
-    actor.items = actor.items.map(item => convertItem(item, srcName, targetName))
-    actor.prototypeToken = convertToken(actor.prototypeToken, srcName, targetName);
-    actor.flags = fixFlags(actor.flags, srcName, targetName);
-
     const system = actor.system;
+    const isSpellcaster = system.details.spellLevel > 0;
 
     const skills = Object
         .entries(SKILL_MAP)
-        .map(([targetSkill, srcSkills]) => ([targetSkill, Math.max(...srcSkills.map(skill => system.skills[skill].total))] as [string, number]))
+        .map(([targetSkill, srcSkills]) => ([targetSkill, Math.max(...srcSkills.map(skill => getSkillValue(actor, skill)))] as [string, number]))
         .filter(([, skillValue]) => skillValue > 0)
         .map(([targetSkill, skillValue]) => createSkill(targetSkill, skillValue));
-
+    
     const meleeWeapon = actor.items.find(item => item.type === 'weapon' && item.system.actionType === 'mwak' && item.system.proficient);
     const rangedWeapon = actor.items.find(item => item.type === 'weapon' && item.system.actionType === 'rwak' && item.system.proficient);
 
-    const meleeAttr = meleeWeapon?.system.ability ?? 'str';
-    const rangedAttr = rangedWeapon?.system.ability ?? 'dex';
+    const meleeAttr = meleeWeapon?.system.ability || (meleeWeapon?.system.properties?.fin ? 'dex' : 'str');
+    const rangedAttr = rangedWeapon?.system.ability || 'dex';
 
-    skills.push(createSkill('Fighting', getAbilityValue(system.abilities[meleeAttr])));
-    skills.push(createSkill('Shooting', getAbilityValue(system.abilities[rangedAttr])));
+    if (meleeAttr) skills.push(createSkill('Fighting', getAbilityValue(system.abilities[meleeAttr])));
+    if (rangedAttr) skills.push(createSkill('Shooting', getAbilityValue(system.abilities[rangedAttr])));
     
-    if (system.attributes?.spellcasting === 'int' || system.attributes?.spellcasting === 'cha') {
+    if (isSpellcaster && (system.attributes?.spellcasting === 'int' || system.attributes?.spellcasting === 'cha')) {
         skills.push(createSkill('Spellcasting', getAbilityValue(system.abilities?.[system.attributes?.spellcasting])));
     }
     
-    if (system.attributes?.spellcasting === 'wis') {
+    if (isSpellcaster && system.attributes?.spellcasting === 'wis') {
         skills.push(createSkill('Faith', getAbilityValue(system.abilities?.[system.attributes?.spellcasting])));
     }
 
     skills.push(createSkill('Unskilled Attempt', 0, -2));
-
-    actor.items.push(...skills);
 
     const languages = system.traits.languages?.value ?? [];
     if (system.traits.languages?.custom)
     languages.push(...system.traits.languages?.custom?.split(';').map((l: string) => l.trim()).filter((x: string) => !!x));
 
     actor.system = {
+        additionalStats: {
+            ...createAdditionalStatWithKey('languages', 'Languages', languages.join(', ')),
+            ...createAdditionalStatWithKey('align', 'Alignment', system.details?.alignment),
+        },
         details: {
             notes: fixupDcs(system.description?.value ?? ''),
             appearance: fixupDcs(system.details.appearance ?? ''),
             biography: {
                 value: fixupDcs(`
-                ${system.details.alignment ? `<p><strong>Alignment:</strong> ${system.details.alignment}</p>` : ''}
-                ${languages.length > 0 ? `<p><strong>Languages:</strong> ${languages.join(', ')}</p>` : ''}
-                ${system.details.biography?.value ? `<h2>Biography</h2><p>${system.details.biography?.value}</p>` : ''}
-                ${system.details.background ? `<h2>Background</h2><p>${system.details.background}</p>` : ''}
-                ${system.details.trait ? `<h2>Personality traits</h2><p>${system.details.trait}</p>` : ''}
-                ${system.details.ideal ? `<h2>Ideals</h2><p>${system.details.ideal}</p>` : ''}
-                ${system.details.bond ? `<h2>Bonds</h2><p>${system.details.bond}</p>` : ''}
-                ${system.details.flaw ? `<h2>Flaws</h2><p>${system.details.flaw}</p>` : ''}
+                ${system.details.biography?.value ? system.details.biography?.value : ''}
+                ${system.details.background ? system.details.background : ''}
+                ${system.details.trait ? system.details.trait : ''}
+                ${system.details.ideal ? system.details.ideal : ''}
+                ${system.details.bond ? system.details.bond : ''}
+                ${system.details.flaw ? system.details.flaw : ''}
                 `)
             },
             archetype: '',
@@ -386,10 +538,10 @@ function convertActor(actor: Actor, srcName: string, targetName: string): Actor 
         },
         attributes: {
             agility: { die: convertValue(getAbilityValue(system.abilities.dex)) },
-            smarts: { die: convertValue(getAbilityValue(system.abilities.dex)) },
+            smarts: { die: convertValue(getAbilityValue(system.abilities.int)) },
             spirit: { die: convertValue(Math.max(getAbilityValue(system.abilities.wis), getAbilityValue(system.abilities.cha))) },
-            strength: { die: convertValue(getAbilityValue(system.abilities.dex)) },
-            vigor: { die: convertValue(getAbilityValue(system.abilities.dex)) },
+            strength: { die: convertValue(getAbilityValue(system.abilities.str)) },
+            vigor: { die: convertValue(getAbilityValue(system.abilities.con)) },
         },
         stats: {
             ...(SIZE_MAP[system.traits.size] ?? { size: 0, scale: 0 }),
@@ -403,15 +555,67 @@ function convertActor(actor: Actor, srcName: string, targetName: string): Actor 
         wildcard: false,
     };
 
+    actor.img = replacePaths(actor.img, srcName, targetName);
+    actor.prototypeToken = convertToken(actor.prototypeToken, srcName, targetName);
+    actor.flags = fixFlags(actor.flags, srcName, targetName);
+    actor.effects = actor.effects.map(effect => convertEffect(effect));
+    actor.items = actor.items.map(item => convertItem(item, srcName, targetName))
+    actor.items.push(...skills);
+
+    if (system.attributes.senses.darkvision) {
+        actor.items.push({
+            _id: generateId(),
+            name: 'Darkvision',
+            type: 'ability',
+            img: '',
+            system: {
+                subtype: 'special',
+            },
+            effects: [],
+        });
+    }
+    
+    if (system.attributes.senses.blindsight) {
+        actor.items.push({
+            _id: generateId(),
+            name: 'Blindsense',
+            type: 'ability',
+            img: '',
+            system: {
+                subtype: 'special',
+            },
+            effects: [],
+        });
+    }
+    
+    if (system.attributes.senses.blindsight) {
+        actor.items.push({
+            _id: generateId(),
+            name: 'Blindsense',
+            type: 'ability',
+            img: '',
+            system: {
+                subtype: 'special',
+            },
+            effects: [],
+        });
+    }
+
     return actor;
 }
 
 function convertMacro(macro: Macro, srcName: string, targetName: string): Macro {
     macro.img = replacePaths(macro.img, srcName, targetName);
     macro.command = replacePaths(macro.command, srcName, targetName);
+
+    const macroReplacementPath = join(__dirname, '../extras/macros', `${macro._id}.js`);
+
+    if (existsSync(macroReplacementPath)) {
+        macro.command = readFileSync(macroReplacementPath).toString();
+    }
     
     if (macro.command) {
-        macro.command = macro.command.replace(new RegExp(`(get|getFlag)\\((['"])${srcName}(['"])`, 'g'), `$1($2${targetName}$3`);
+        macro.command = macro.command.replace(new RegExp(`(get|set|getFlag|register)\\((['"])${srcName}(['"])`, 'g'), `$1($2${targetName}$3`);
     }
     
     macro.flags = fixFlags(macro.flags, srcName, targetName);
@@ -517,10 +721,12 @@ async function convertAdventureDb(path: string, srcName: string, targetName: str
     
     const promises = entries.map(async entry => {
         const converted = convertAdventure(entry, srcName, targetName);
-        await db.updateAsync({ _id: entry._id }, converted);
+        await db.removeAsync({ _id: entry._id }, {});
+        await db.insertAsync(converted);
     });
 
     await Promise.all(promises);
+    await db.compactDatafileAsync();
 }
 
 export async function updateDatabases(modulePath: string, srcName: string, targetName: string) {

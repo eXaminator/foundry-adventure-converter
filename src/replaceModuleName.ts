@@ -16,14 +16,14 @@ export async function replaceModuleName(path: string, srcName: string, targetNam
             const data = await readFile(fullPath);
             let content = data.toString();
 
-            content = content.replace(new RegExp(`(get|getFlag)\\((['"])${srcName}(['"])`, 'g'), `$1($2${targetName}$3`);
+            content = content.replace(new RegExp(`(get|set|getFlag|register)\\((['"])${srcName}(['"])`, 'g'), `$1($2${targetName}$3`);
             content = content.replace(new RegExp(`modules/${srcName}/`, 'g'), `modules/${targetName}/`);
+            content = content.replace(new RegExp(`moduleName: "${srcName}"`, 'g'), `moduleName: "${targetName}"`);
+            content = content.replace(new RegExp(`packId: "${srcName}.${srcName}"`, 'g'), `packId: "${targetName}.${srcName}"`);
 
             await writeFile(fullPath, content);
         }
     });
 
     await Promise.all(promises);
-    // Suche nach Pfaden
-    // Suche nach dem Namen als 
 }

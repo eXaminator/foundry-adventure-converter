@@ -4,6 +4,7 @@ import { copyModule } from './copyModule';
 import { updateModuleJson } from './updateModuleJson';
 import { replaceModuleName } from './replaceModuleName';
 import { updateDatabases } from './updateDatabases';
+import { copySync } from 'fs-extra';
 
 const PATH = '/Users/steven/Sites/stacks/data/foundry/data/Data/modules';
 const MODULE = 'house-divided';
@@ -26,5 +27,6 @@ const TARGET_SYSTEM = {
     await replaceModuleName(targetPath, MODULE, targetModuleName);
     await rm(join(targetPath, 'signature.json'), { force: true });
     await updateDatabases(targetPath, MODULE, targetModuleName);
+    copySync(join(__dirname, '../extras/assets'), join(targetPath, 'assets'), { recursive: true, overwrite: true });
 
 })().catch(console.error);
