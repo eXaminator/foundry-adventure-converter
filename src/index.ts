@@ -22,11 +22,17 @@ const TARGET_SYSTEM = {
     const srcPath = join(PATH, MODULE);
     const targetPath = join(PATH, targetModuleName);
 
+    console.log('Copy module...');
     await copyModule(srcPath, targetPath);
+    console.log('Update module.json...');
     await updateModuleJson(targetPath, SOURCE_SYSTEM_ID, TARGET_SYSTEM);
+    console.log('Change module name...');
     await replaceModuleName(targetPath, MODULE, targetModuleName);
+    console.log('Remove signature...');
     await rm(join(targetPath, 'signature.json'), { force: true });
+    console.log('Update databases...');
     await updateDatabases(targetPath, MODULE, targetModuleName);
+    console.log('Copy custom assets...');
     copySync(join(__dirname, '../extras/assets'), join(targetPath, 'assets'), { recursive: true, overwrite: true });
 
 })().catch(console.error);
