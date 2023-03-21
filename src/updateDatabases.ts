@@ -56,13 +56,13 @@ const SKILL_ATTR_MAP: Record<string, string> = {
     Thievery: 'agility',
 };
 
-const SIZE_MAP: Record<string, { size: number, scale: number }> = {
-    tiny: { size: -4, scale: -6 },
-    sm: { size: -2, scale: -2 },
-    med: { size: 0, scale: 0 },
-    lg: { size: 4, scale: 2 },
-    huge: { size: 8, scale: 4 },
-    grg: { size: 12, scale: 6 },
+const SIZE_MAP: Record<string, { size: number, scale: number, label: string }> = {
+    tiny: { size: -4, scale: -6, label: 'Tiny' },
+    sm: { size: -2, scale: -2, label: 'Small' },
+    med: { size: 0, scale: 0, label: 'Medium' },
+    lg: { size: 4, scale: 2, label: 'Large' },
+    huge: { size: 8, scale: 4, label: 'Huge' },
+    grg: { size: 12, scale: 6, label: 'Gargantuan' },
 };
 
 interface Texture {
@@ -76,7 +76,7 @@ interface Effect {
 interface Item {
     _id: string,
     name: string,
-    img: string|null,
+    img: string | null,
     type: string,
     system: any,
     flags?: Record<string, unknown>,
@@ -85,10 +85,10 @@ interface Item {
 
 interface Token {
     bar1: {
-        attribute: string|null,
+        attribute: string | null,
     },
     bar2: {
-        attribute: string|null,
+        attribute: string | null,
     },
     texture: Texture,
     flags?: Record<string, unknown>,
@@ -105,7 +105,7 @@ interface Token {
 interface Actor {
     _id: string,
     name: string,
-    img: string|null,
+    img: string | null,
     type: string,
     system: any,
     prototypeToken: Token,
@@ -213,6 +213,12 @@ interface Die {
     modifier: number,
 }
 
+function capitalize(string: string | null | undefined): string | null | undefined {
+    if (!string) return string;
+
+    return String(string).charAt(0).toUpperCase() + string.slice(1);
+}
+
 function dcToModifier(dc: number) {
     if (dc <= 7) return `<span title="DC ${dc}">+4 🎲</span>`;
     if (dc <= 12) return `<span title="DC ${dc}">+2 🎲</span>`;
@@ -223,9 +229,9 @@ function dcToModifier(dc: number) {
     return `<span title="DC ${dc}">-8</span>`;
 }
 
-function replacePaths(text: string|null, srcName: string, targetName: string) {
+function replacePaths(text: string | null, srcName: string, targetName: string) {
     if (!text) return text;
-    
+
     return text.replace(new RegExp(`modules/${srcName}/`, 'g'), `modules/${targetName}/`);
 }
 
@@ -245,7 +251,7 @@ function replaceSkillName(text: string) {
         .replace(/\b(sleight of hand)\b(?![^<]*>)/gi, '<span title="$1">Thievery</span>')
 }
 
-function fixupDcs(text: string|null) {
+function fixupDcs(text: string | null) {
     if (!text) return text;
 
     return text.replace(/saving throw/gi, 'roll')
@@ -258,7 +264,7 @@ function fixupDcs(text: string|null) {
         .replace(/wisdom(?![^<]*>)/gi, 'Spirit')
         .replace(/charisma(?![^<]*>)/gi, 'Spirit (Charisma)')
         .replace(/intelligence(?![^<]*>)/gi, 'Smarts')
-    
+
         .replace(/<span title="(\w+)">(\w+)<\/span> or <span title="(\w+)">\2<\/span>/gi, '<span title="$1 or $3">$2</span>') // remove duplicates, like "Notice or Notice"
         .replace(/DC ([0-9]+)/gi, (all, dc) => dcToModifier(Number(dc)))
         .replace('(\w)[ ]+', '$1'); // Remove extra whitespaces after all these replacements
@@ -293,6 +299,8 @@ function createNotes(data: any): string {
 
 function getRange(rangeInFt: number): string {
     const base = Math.floor(rangeInFt / 5);
+
+    if (base === 1) return '';
 
     return `${base}/${base * 2}/${base * 4}`;
 }
@@ -333,10 +341,10 @@ function convertItem(item: Item, srcName: string, targetName: string): Item {
 
         weaponStats = {
             actions: {
-                skill: 
+                skill:
                     item.system.actionType === 'mwak' ? 'Fighting' :
-                    item.system.actionType === 'rwak' ? 'Shooting' :
-                    'Athletics',
+                        item.system.actionType === 'rwak' ? 'Shooting' :
+                            'Athletics',
                 additional: actions
             },
             ap: item.system.properties?.mgc ? '1' : '0',
@@ -357,11 +365,11 @@ function convertItem(item: Item, srcName: string, targetName: string): Item {
     let armorStats = {};
     if (item.type === 'armor') {
         armorStats = {
-            armor: 
+            armor:
                 item.system.armor.type === 'light' ? 2 :
-                item.system.armor.type === 'medium' ? 3 :
-                item.system.armor.type === 'heavy' ? 4 :
-                0,
+                    item.system.armor.type === 'medium' ? 3 :
+                        item.system.armor.type === 'heavy' ? 4 :
+                            0,
             isHeavyArmor: false,
             isNaturalArmor: false,
             locations: {
@@ -372,9 +380,9 @@ function convertItem(item: Item, srcName: string, targetName: string): Item {
             },
             minStr:
                 item.system.armor.type === 'light' ? 'd6' :
-                item.system.armor.type === 'medium' ? 'd8' :
-                item.system.armor.type === 'heavy' ? 'd10' :
-                'd4',
+                    item.system.armor.type === 'medium' ? 'd8' :
+                        item.system.armor.type === 'heavy' ? 'd10' :
+                            'd4',
             notes: '',
             toughness: '',
             equipStatus: 3,
@@ -405,7 +413,7 @@ function convertToken(token: Token, srcName: string, targetName: string): Token 
     token.bar1.attribute = null;
     token.bar2.attribute = null;
     token.flags = fixFlags(token.flags, srcName, targetName);
-    
+
     token.light.bright /= 5;
     token.light.dim /= 5;
     token.sight.range /= 5;
@@ -418,7 +426,7 @@ function convertValue(value: number, modifier = 0): Die {
     if (value <= 4) return { sides: 6, modifier };
     if (value <= 6) return { sides: 8, modifier };
     if (value <= 8) return { sides: 10, modifier };
-    
+
     return { sides: 12, modifier: Math.ceil((value - 11) / 3) + modifier };
 }
 
@@ -452,7 +460,7 @@ function getAbilityModifier(actor: Actor, abilityName: string): number {
 function getProfBonus(actor: Actor, skillName: string): number {
     const skill = actor.system.skills[skillName];
     if (skill?.prof) return skill?.prof;
-    
+
     const multiplier = skill.value ?? 0;
 
     if (actor.system.attributes?.prof) return actor.system.attributes?.prof * multiplier;
@@ -469,6 +477,8 @@ function getSkillValue(actor: Actor, skillName: string) {
 }
 
 function createAdditionalStatWithKey(key: string, label: string, value: any): Record<string, { dtype: string, hasMaxValue: boolean, isCheckbox: boolean, label: string, value: any }> {
+    if (!value) return {};
+
     return {
         [key]: {
             label,
@@ -489,7 +499,7 @@ function convertActor(actor: Actor, srcName: string, targetName: string): Actor 
         .map(([targetSkill, srcSkills]) => ([targetSkill, Math.max(...srcSkills.map(skill => getSkillValue(actor, skill)))] as [string, number]))
         .filter(([, skillValue]) => skillValue > 0)
         .map(([targetSkill, skillValue]) => createSkill(targetSkill, skillValue));
-    
+
     const meleeWeapon = actor.items.find(item => item.type === 'weapon' && item.system.actionType === 'mwak' && item.system.proficient);
     const rangedWeapon = actor.items.find(item => item.type === 'weapon' && item.system.actionType === 'rwak' && item.system.proficient);
 
@@ -498,11 +508,11 @@ function convertActor(actor: Actor, srcName: string, targetName: string): Actor 
 
     if (meleeAttr) skills.push(createSkill('Fighting', getAbilityValue(system.abilities[meleeAttr])));
     if (rangedAttr) skills.push(createSkill('Shooting', getAbilityValue(system.abilities[rangedAttr])));
-    
+
     if (isSpellcaster && (system.attributes?.spellcasting === 'int' || system.attributes?.spellcasting === 'cha')) {
         skills.push(createSkill('Spellcasting', getAbilityValue(system.abilities?.[system.attributes?.spellcasting])));
     }
-    
+
     if (isSpellcaster && system.attributes?.spellcasting === 'wis') {
         skills.push(createSkill('Faith', getAbilityValue(system.abilities?.[system.attributes?.spellcasting])));
     }
@@ -511,12 +521,18 @@ function convertActor(actor: Actor, srcName: string, targetName: string): Actor 
 
     const languages = system.traits.languages?.value ?? [];
     if (system.traits.languages?.custom)
-    languages.push(...system.traits.languages?.custom?.split(';').map((l: string) => l.trim()).filter((x: string) => !!x));
+        languages.push(...system.traits.languages?.custom?.split(';').map((l: string) => l.trim()).filter((x: string) => !!x));
+
+    const swarm = SIZE_MAP[system.details?.type.swarm]?.label;
+    const creatureType = `${swarm ? `Swarm of ${swarm} ` : ''}${capitalize(system.details?.type.custom || system.details?.type.value)}${system.details?.type.subtype ? ` (${system.details?.type.subtype})` : ''}`;
+    const speedInch = Math.round((system.attributes?.movement?.walk || 30) / 5);
 
     actor.system = {
         additionalStats: {
             ...createAdditionalStatWithKey('languages', 'Languages', languages.join(', ')),
             ...createAdditionalStatWithKey('align', 'Alignment', system.details?.alignment),
+            ...createAdditionalStatWithKey('type', 'Creature Type', creatureType),
+            ...createAdditionalStatWithKey('cr', 'CR', system.details?.cr),
         },
         details: {
             notes: fixupDcs(system.description?.value ?? ''),
@@ -546,10 +562,10 @@ function convertActor(actor: Actor, srcName: string, targetName: string): Actor 
         stats: {
             ...(SIZE_MAP[system.traits.size] ?? { size: 0, scale: 0 }),
             speed: {
-                runningDie: 6 + Math.floor((Math.round(system.attributes.movement.walk / 5) - 6) / 2),
+                runningDie: 6 + Math.floor((speedInch - 6) / 2),
                 runningMod: 0,
-                value: Math.round(system.attributes.movement.walk / 5),
-                adjusted: Math.round(system.attributes.movement.walk / 5)
+                value: Math.round(speedInch),
+                adjusted: Math.round(speedInch)
             }
         },
         wildcard: false,
@@ -574,7 +590,7 @@ function convertActor(actor: Actor, srcName: string, targetName: string): Actor 
             effects: [],
         });
     }
-    
+
     if (system.attributes.senses.blindsight) {
         actor.items.push({
             _id: generateId(),
@@ -587,7 +603,7 @@ function convertActor(actor: Actor, srcName: string, targetName: string): Actor 
             effects: [],
         });
     }
-    
+
     if (system.attributes.senses.blindsight) {
         actor.items.push({
             _id: generateId(),
@@ -613,11 +629,11 @@ function convertMacro(macro: Macro, srcName: string, targetName: string): Macro 
     if (existsSync(macroReplacementPath)) {
         macro.command = readFileSync(macroReplacementPath).toString();
     }
-    
+
     if (macro.command) {
         macro.command = macro.command.replace(new RegExp(`(get|set|getFlag|register)\\((['"])${srcName}(['"])`, 'g'), `$1($2${targetName}$3`);
     }
-    
+
     macro.flags = fixFlags(macro.flags, srcName, targetName);
 
     return macro;
@@ -625,11 +641,11 @@ function convertMacro(macro: Macro, srcName: string, targetName: string): Macro 
 
 function convertJournal(journal: Journal, srcName: string, targetName: string): Journal {
     journal.flags = fixFlags(journal.flags, srcName, targetName);
-    
+
     journal.pages = journal.pages.map(page => {
         if (page.text?.content) page.text.content = fixupDcs(replacePaths(page.text.content, srcName, targetName));
         page.flags = fixFlags(page.flags, srcName, targetName);
-        
+
         // TODO: Support for image pages?
         return page;
     });
@@ -639,7 +655,7 @@ function convertJournal(journal: Journal, srcName: string, targetName: string): 
 
 function convertPlaylist(playlist: Playlist, srcName: string, targetName: string): Playlist {
     playlist.flags = fixFlags(playlist.flags, srcName, targetName);
-    
+
     playlist.sounds = playlist.sounds.map(sound => {
         sound.path = replacePaths(sound.path, srcName, targetName)!;
         sound.flags = fixFlags(sound.flags, srcName, targetName);
@@ -652,7 +668,7 @@ function convertPlaylist(playlist: Playlist, srcName: string, targetName: string
 function convertTable(table: Table, srcName: string, targetName: string): Table {
     table.img = replacePaths(table.img, srcName, targetName);
     table.flags = fixFlags(table.flags, srcName, targetName);
-    
+
     table.results = table.results.map(result => {
         result.img = replacePaths(result.img, srcName, targetName)!;
         result.text = fixupDcs(replacePaths(result.text, srcName, targetName))!;
@@ -682,19 +698,19 @@ function convertScene(scene: Scene, srcName: string, targetName: string): Scene 
         sound.radius /= 5;
         return sound;
     });
-    
+
     scene.tiles = scene.tiles.map(tile => {
         tile.texture.src = replacePaths(tile.texture.src, srcName, targetName);
         tile.flags = fixFlags(tile.flags, srcName, targetName);
         return tile;
     });
-    
+
     scene.notes = scene.notes.map(note => {
         note.texture.src = replacePaths(note.texture.src, srcName, targetName);
         note.flags = fixFlags(note.flags, srcName, targetName);
         return note;
     });
-    
+
     scene.tokens = scene.tokens.map(token => convertToken(token, srcName, targetName));
 
     return scene;
@@ -710,7 +726,7 @@ function convertAdventure(adventure: Adventure, srcName: string, targetName: str
     adventure.playlists = adventure.playlists.map(playlist => convertPlaylist(playlist, srcName, targetName));
     adventure.scenes = adventure.scenes.map(scene => convertScene(scene, srcName, targetName));
     adventure.tables = adventure.tables.map(table => convertTable(table, srcName, targetName));
-    
+
     return adventure;
 }
 
@@ -718,7 +734,7 @@ async function convertAdventureDb(path: string, srcName: string, targetName: str
     console.log(`Start converting ${path}...`);
     const db = new Datastore({ filename: path, autoload: true });
     const entries = await db.findAsync<Adventure>({});
-    
+
     const promises = entries.map(async entry => {
         const converted = convertAdventure(entry, srcName, targetName);
         await db.removeAsync({ _id: entry._id }, {});
@@ -731,7 +747,7 @@ async function convertAdventureDb(path: string, srcName: string, targetName: str
 
 export async function updateDatabases(modulePath: string, srcName: string, targetName: string) {
     const moduleJsonPath = join(modulePath, 'module.json');
-    
+
     const json = await readFile(moduleJsonPath);
     const moduleJson = JSON.parse(json.toString());
 
