@@ -6,7 +6,12 @@ import { replaceModuleName } from './replaceModuleName';
 import { updateDatabases } from './updateDatabases';
 import { copySync } from 'fs-extra';
 
-const PATH = '/Users/steven/Sites/stacks/data/foundry/data/Data/modules';
+if (process.argv.length <= 2) {
+    console.error('Missing argument: path to modules folder');
+    process.exit(1);
+}
+
+const MODULES_PATH = process.argv[2];
 const MODULE = 'house-divided';
 const SOURCE_SYSTEM_ID = 'dnd5e';
 const TARGET_SYSTEM = {
@@ -19,8 +24,8 @@ const TARGET_SYSTEM = {
 
 (async function run() {
     const targetModuleName = `${MODULE}-${TARGET_SYSTEM.id}`;
-    const srcPath = join(PATH, MODULE);
-    const targetPath = join(PATH, targetModuleName);
+    const srcPath = join(MODULES_PATH, MODULE);
+    const targetPath = join(MODULES_PATH, targetModuleName);
 
     console.log('Copy module...');
     await copyModule(srcPath, targetPath);
@@ -33,6 +38,6 @@ const TARGET_SYSTEM = {
     console.log('Update databases...');
     await updateDatabases(targetPath, MODULE, targetModuleName);
     console.log('Copy custom assets...');
-    copySync(join(__dirname, '../extras/assets'), join(targetPath, 'assets'), { recursive: true, overwrite: true });
+    copySync(join(__dirname, '../extras/assets'), join(targetPath, 'assets'), { overwrite: true });
 
 })().catch(console.error);

@@ -743,6 +743,7 @@ async function convertAdventureDb(path: string, srcName: string, targetName: str
 
     await Promise.all(promises);
     await db.compactDatafileAsync();
+    console.log('    ...done');
 }
 
 export async function updateDatabases(modulePath: string, srcName: string, targetName: string) {
