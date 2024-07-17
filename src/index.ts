@@ -17,8 +17,8 @@ const SOURCE_SYSTEM_ID = 'dnd5e';
 const TARGET_SYSTEM = {
     id: 'swade',
     compatibility: {
-        minimum: '2.0.0',
-        verified: '2.0.0'
+        minimum: '4.0.0',
+        verified: '4.0.0'
     }
 };
 
